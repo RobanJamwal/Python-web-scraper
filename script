@@ -1,0 +1,116 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
+import pandas as pd
+import json
+
+# Set up WebDriver
+chrome_options = Options()
+chrome_options.add_argument("--headless")  # Run in headless mode
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-dev-shm-usage")
+driver_path = '/path/to/chromedriver'  # Path to your chromedriver
+service = Service(driver_path)
+driver = webdriver.Chrome(service=service, options=chrome_options)
+
+# Amazon Login Credentials
+amazon_username = 'your_email@example.com'
+amazon_password = 'your_password'
+
+# Define URL for Amazon Best Sellers
+base_url = 'https://www.amazon.in/gp/bestsellers/?ref_=nav_em_cs_bestsellers_0_1_1_2'
+
+# Function to log in to Amazon
+def amazon_login():
+    driver.get('https://www.amazon.com/ap/signin')
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, 'ap_email'))).send_keys(amazon_username)
+    driver.find_element(By.ID, 'continue').click()
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, 'ap_password'))).send_keys(amazon_password)
+    driver.find_element(By.ID, 'signInSubmit').click()
+
+# Function to navigate to Best Sellers page
+def go_to_best_sellers():
+    driver.get(base_url)
+
+# Function to extract product details
+def extract_product_details():
+    products = []
+    product_elements = driver.find_elements(By.CSS_SELECTOR, '.zg-item-immersion')
+
+    for product in product_elements:
+        try:
+            product_name = product.find_element(By.CSS_SELECTOR, '.p13n-sc-truncated').text
+            product_price = product.find_element(By.CSS_SELECTOR, '.p-price').text
+            sale_discount = product.find_element(By.CSS_SELECTOR, '.p-badge').text
+            best_seller_rating = product.find_element(By.CSS_SELECTOR, '.a-icon-alt').text
+            ship_from = product.find_element(By.CSS_SELECTOR, '.a-size-small.a-color-secondary').text
+            sold_by = product.find_element(By.CSS_SELECTOR, '.a-size-small.a-color-secondary').text
+            rating = product.find_element(By.CSS_SELECTOR, '.a-icon-alt').text
+            product_description = product.find_element(By.CSS_SELECTOR, '.a-size-small.a-color-secondary').text
+            number_bought = product.find_element(By.CSS_SELECTOR, '.a-size-small.a-color-secondary').text
+            category_name = driver.find_element(By.CSS_SELECTOR, '.zg_selected').text
+            images = [img.get_attribute('src') for img in product.find_elements(By.CSS_SELECTOR, 'img')]
+            
+            # Filter based on discount criteria (greater than 50%)
+            if float(sale_discount.strip('%')) > 50:
+                product_data = {
+                    'Product Name': product_name,
+                    'Product Price': product_price,
+                    'Sale Discount': sale_discount,
+                    'Best Seller Rating': best_seller_rating,
+                    'Ship From': ship_from,
+                    'Sold By': sold_by,
+                    'Rating': rating,
+                    'Product Description': product_description,
+                    'Number Bought in Past Month': number_bought,
+                    'Category Name': category_name,
+                    'All Available Images': images
+                }
+                products.append(product_data)
+        except Exception as e:
+            print(f"Error extracting product details: {e}")
+    
+    return products
+
+# Function to save data to CSV or JSON
+def save_data_to_file(data, file_type='csv'):
+    if file_type == 'csv':
+        df = pd.DataFrame(data)
+        df.to_csv('amazon_best_sellers.csv', index=False)
+    elif file_type == 'json':
+        with open('amazon_best_sellers.json', 'w') as json_file:
+            json.dump(data, json_file, indent=4)
+
+# Main script to run the scraper
+def main():
+    try:
+        amazon_login()  # Log in to Amazon
+        go_to_best_sellers()  # Navigate to Best Sellers
+        time.sleep(3)  # Wait for the page to load
+
+        all_products = []
+
+        # Loop through 10 categories (example categories)
+        categories = ['Books', 'Electronics', 'Clothing', 'Toys', 'Home', 'Sports', 'Beauty', 'Tools', 'Health', 'Automotive']
+        for category in categories:
+            print(f"Scraping category: {category}")
+            driver.get(f"{base_url}/{category}")
+            time.sleep(3)  # Wait for category page to load
+            products = extract_product_details()
+            all_products.extend(products)
+
+        # Save data to CSV or JSON
+        save_data_to_file(all_products, file_type='csv')
+
+    except Exception as e:
+        print(f"Error during scraping: {e}")
+    finally:
+        driver.quit()
+
+if __name__ == '__main__':
+    main()
